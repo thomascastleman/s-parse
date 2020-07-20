@@ -17,7 +17,7 @@ struct ParseResult<'a> {
     rest: &'a str
 }
 
-// parse 1 or more s-expressions from the input string
+// parse 0 or more s-expressions from the input string
 pub fn parse(s: &str) -> Vec<SExpr> {
     let mut copy = eat_whitespace(&s);
     let mut exprs = Vec::new();
