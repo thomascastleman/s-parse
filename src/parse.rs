@@ -12,14 +12,23 @@ pub enum SExpr<'a> {
 
 #[derive(Debug)]
 #[derive(PartialEq)]
-pub struct ParseResult<'a> {
+struct ParseResult<'a> {
     parsed: SExpr<'a>,
     rest: &'a str
 }
 
 // parse 1 or more s-expressions from the input string
 pub fn parse(s: &str) -> Vec<SExpr> {
-    vec![]
+    let mut copy = eat_whitespace(&s);
+    let mut exprs = Vec::new();
+
+    while !copy.is_empty() {
+        let res = s_parse(copy);            // parse an s-expression
+        exprs.push(res.parsed);             // add to expression vector
+        copy = eat_whitespace(res.rest);    // move to end of previous expr
+    }
+
+    return exprs;
 }
 
 // parse an s-expression off the input
@@ -136,17 +145,13 @@ fn list_parse(s: &str) -> ParseResult {
 
     let mut els = Vec::new();       // vector for accumulating list elements
     let mut el;                     // holder for each element
-    let mut copy = &s[1..];         // eat the opening paren
+    let mut copy = eat_whitespace(&s[1..]); // eat the opening paren/whitespace
 
     // parse elements of list, with arbitrary whitespace in between
     loop {
-        copy = eat_whitespace(copy);
-
         el = s_parse(copy);     // parse S-expression element
         els.push(el.parsed);    // add to element list
-        copy = el.rest;         // move to end of parsed input
-
-        copy = eat_whitespace(copy);
+        copy = eat_whitespace(el.rest); // move to end of parsed input/eat trailing whitespace
 
         if copy.is_empty() {
             panic!("list_parse: unexpected end of list: no \
@@ -187,52 +192,83 @@ mod parse_tests {
     use super::*;
     use SExpr::*;
 
-    /*---------------- s_parse tests ----------------*/
+    /*---------------- parse tests ----------------*/
 
-    // #[test]
-    // fn parses_int() {
-    //     assert_eq!(s_parse("3"), SInt(3));
-    //     assert_eq!(s_parse("193755"), SInt(193755));
-    //     assert_eq!(s_parse("0"), SInt(0));
-    //     assert_eq!(s_parse("-1728"), SInt(-1728));
-    // }
+    #[test]
+    fn parses_int() {
+        assert_eq!(parse("3"), vec![SInt(3)]);
+        assert_eq!(parse("193755"), vec![SInt(193755)]);
+        assert_eq!(parse("-1728"), vec![SInt(-1728)]);
+        assert_eq!(parse("1 5 -2"), vec![SInt(1), SInt(5), SInt(-2)]);
+    }
 
-    // #[test]
-    // fn parses_float() {
-    //     assert_eq!(s_parse("0.5"), SFloat(0.5));
-    //     assert_eq!(s_parse("-11.28"), SFloat(-11.28));
-    //     assert_eq!(s_parse("99.9"), SFloat(99.9));
-    //     assert_eq!(s_parse("34587.23424"), SFloat(34587.23424));
-    // }
+    #[test]
+    fn parses_float() {
+        assert_eq!(parse("0.5"), vec![SFloat(0.5)]);
+        assert_eq!(parse("-11.28"), vec![SFloat(-11.28)]);
+        assert_eq!(parse("34587.23424"), vec![SFloat(34587.23424)]);
+        assert_eq!(parse("0.5 2.1 8.32"), vec![SFloat(0.5), SFloat(2.1), SFloat(8.32)]);
+    }
 
-    // #[test]
-    // fn parses_symbol() {
-    //     assert_eq!(s_parse("my-symbol"), SSym("my-symbol"));
-    //     assert_eq!(s_parse("x"), SSym("x"));
-    //     assert_eq!(s_parse("NAME"), SSym("NAME"));
-    //     assert_eq!(s_parse("e^2*x/y"), SSym("e^2*x/y"));
-    // }
+    #[test]
+    fn parses_symbol() {
+        assert_eq!(parse("my-symbol"), vec![SSym("my-symbol")]);
+        assert_eq!(parse("x"), vec![SSym("x")]);
+        assert_eq!(parse("NAME"), vec![SSym("NAME")]);
+        assert_eq!(parse("e^2*x/y"), vec![SSym("e^2*x/y")]);
+        assert_eq!(parse("x y z"), vec![SSym("x"), SSym("y"), SSym("z")]);
+    }
 
-    // #[test]
-    // fn parses_str() {
-    //     assert_eq!(s_parse("\"test\""), SStr("test"));
-    //     assert_eq!(s_parse("\"this is a string\""), SStr("this is a string"));
-    //     assert_eq!(s_parse("\"23847\""), SStr("23847"));
-    //     assert_eq!(s_parse("\"(parens)\""), SStr("(parens)"));
-    // }
+    #[test]
+    fn parses_str() {
+        assert_eq!(parse("\"test\""), vec![SStr("test")]);
+        assert_eq!(parse("\"this is a string\""), vec![SStr("this is a string")]);
+        assert_eq!(parse("\"23847\""), vec![SStr("23847")]);
+        assert_eq!(parse("\"(parens)\""), vec![SStr("(parens)")]);
+        assert_eq!(parse("\"one\" \"two\""), vec![SStr("one"), SStr("two")]);
+    }
 
-    // #[test]
-    // fn parses_list() {
-    //     assert_eq!(
-    //         s_parse("(1 2 3)"), 
-    //         SList(vec![SInt(1), SInt(2), SInt(3)]));
-    //     assert_eq!(
-    //         s_parse("(name)"), 
-    //         SList(vec![SSym("name")]));
-    //     assert_eq!(
-    //         s_parse("(f \"arg\" 2 5)"), 
-    //         SList(vec![SSym("f"), SStr("arg"), SInt(2), SInt(5)]));
-    // }
+    #[test]
+    fn parses_list() {
+        assert_eq!(
+            parse("(1 2 3)"), 
+            vec![SList(vec![SInt(1), SInt(2), SInt(3)])]);
+        assert_eq!(
+            parse("(name)"), 
+            vec![SList(vec![SSym("name")])]);
+        assert_eq!(
+            parse("(f \"arg\" 2 5)"), 
+            vec![SList(vec![SSym("f"), SStr("arg"), SInt(2), SInt(5)])]);
+        assert_eq!(
+            parse("(a b) (c d)"),
+            vec![SList(vec![SSym("a"), SSym("b")]), SList(vec![SSym("c"), SSym("d")])]);
+    }
+
+    #[test]
+    fn parses_more_complex_exprs() {
+        assert_eq!(
+            parse(" (define (f x y) \
+                        (* x (+ 2 y))) \
+                    (f -3 2.7)"),
+            vec![
+                SList(vec![SSym("define"), 
+                    SList(vec![SSym("f"), SSym("x"), SSym("y")]),
+                    SList(vec![SSym("*"), SSym("x"),
+                        SList(vec![SSym("+"), SInt(2), SSym("y")])])]),
+                SList(vec![SSym("f"), SInt(-3), SFloat(2.7)])]);
+        
+        // ignores whitespace
+        assert_eq!(
+            parse("    (  f   105   xyz ) "),
+            vec![SList(vec![SSym("f"), SInt(105), SSym("xyz")])]);
+        assert_eq!(
+            parse("     "),
+            vec![]);
+
+        assert_eq!(
+            parse("(f \"test string\" 100)"),
+            vec![SList(vec![SSym("f"), SStr("test string"), SInt(100)])]);
+    }
 
     /*---------------- tests for parsing helpers ----------------*/
 

@@ -3,6 +3,7 @@ extern crate regex;
 mod parse;
 
 fn main() {
-    let s = "( (f x) a   (f (* 10 2) x)   c   d  )";
-    println!("parsed \"{}\" as {:?}", s, parse::parse(&s));
+    // an example usage
+    let s = "((lambda (x) (* x x)) 50)";
+    println!("Parsed \"{}\" as {:?}", s, parse::parse(&s));
 }
